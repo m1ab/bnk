@@ -4,13 +4,11 @@ import ru.lumo.bnk.api.Account;
 import ru.lumo.bnk.api.Bank;
 import ru.lumo.bnk.api.LockedAccountException;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Random;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
 /**
  * Created by misha on 16.05.16.
@@ -20,7 +18,7 @@ public class BankImpl implements Bank {
     private final Logger logger = Logger.getLogger(BankImpl.class.getName());
 
     private final Random random = new Random();
-    private Map<String, Account> accountsCache = new LinkedHashMap<>();
+    private Map<String, Account> accountsCache = new ConcurrentHashMap<>();
     private int totalTransfers = 0;
 
     private static BankImpl ourInstance = new BankImpl();
@@ -43,8 +41,17 @@ public class BankImpl implements Bank {
     }
 
     @Override
-    public Object[] getAccNumbersList() {
-        return accountsCache.keySet().stream().sorted().toArray();
+    public List<String> getAccNumbers() {
+        return accountsCache.keySet().parallelStream().sorted().collect(Collectors.toList());
+    }
+
+    @Override
+    public List<Account> getBlockedAccounts() {
+        return accountsCache
+                .values()
+                .parallelStream()
+                .filter(account -> account.isLocked())
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -66,21 +73,24 @@ public class BankImpl implements Bank {
         return random.nextBoolean();
     }
 
+    private void sleepForChecking() {
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException e) {
+            logger.log(Level.WARNING, e.getMessage());
+        }
+    }
+
     @Override
     public void transfer(String fromAccountNum, String toAccountNum, long amount) {
         Account accFrom = accountsCache.get(fromAccountNum);
         Account accTo = accountsCache.get(toAccountNum);
         while (accFrom.isChecking() && accTo.isChecking()) {
-            try {
-                Thread.sleep(100);
-                System.out.println("........... checking ...............");
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
+            sleepForChecking();
         }
         if(accFrom.isLocked() || accTo.isLocked()) {
-            logger.log(Level.INFO, String.format("Deny transfer %d from %s to %s",
-                    amount, accFrom.getAccNumber(), accTo.getAccNumber()));
+//            System.out.printf("    !!!!!!!!!   Deny transfer %d from %s to %s%n",
+//                    amount, accFrom.getAccNumber(), accTo.getAccNumber());
         } else {
             if (amount > 50000) {
                 Thread t = new Thread() {
@@ -125,14 +135,16 @@ public class BankImpl implements Bank {
 //        logger.logger(Level.INFO, String.format("Locked accounts %s and %s", accFrom, accTo));
     }
 
-    public synchronized void doTransactionalTransfer(Account accFrom, Account accTo, long amount) {
+    public synchronized void doTransactionalTransfer(Account accFrom,
+                                                     Account accTo,
+                                                     long amount) {
         try {
             accFrom.debet(amount);
             accTo.credit(amount);
             totalTransfers++;
         } catch (LockedAccountException e) {
-            logger.log(Level.INFO, String.format("Skip transfer %d from %s to %s",
-                    amount, accFrom.getAccNumber(), accTo.getAccNumber()));
+//            System.out.printf("    !!!!!!!!!   Deny transfer %d from %s to %s%n",
+//                    amount, accFrom.getAccNumber(), accTo.getAccNumber());
         }
     }
 

@@ -2,69 +2,61 @@ package ru.lumo.bnk;
 
 import ru.lumo.bnk.api.Bank;
 import ru.lumo.bnk.core.BankImpl;
-import ru.lumo.bnk.util.NanoTimer;
-
-import java.util.Random;
+import ru.lumo.bnk.util.AppHelper;
+import ru.lumo.bnk.util.DefaultTimer;
+import ru.lumo.bnk.util.Timer;
 
 /**
- * Hello world!
+ * Transfer App
  *
  */
 public class App {
 
-    private final static Random r = new Random();
-
     public static void main( String[] args ) {
-
-        NanoTimer<App> nt = new NanoTimer<>(App.class);
-        nt.log("APP START");
+        Timer<App> timer = new DefaultTimer<>(App.class);
+        timer.log("APP START");
 
         Bank bank = BankImpl.getInstance();
-
-        generateAccounts(nt, bank, 1000);
-
-        printAccounts(nt, bank);
-
-        makeTransfers(10, 100, nt);
-
-        printAccounts(nt, bank);
+        AppHelper.generateAccounts(timer, bank, 1000000);
+//        AppHelper.printAccounts(timer, bank);
+        makeTransfers(timer, 1000);
+        AppHelper.printBlockedAccounts(timer, bank);
 
         System.out.printf("Total transfers: %d%n", bank.getTotalTransfers());
     }
 
-    private static void printAccounts(NanoTimer nt, Bank bank) {
-        String accNumber;
-        for (Object obj : bank.getAccNumbersList()) {
-            accNumber = obj.toString();
-            System.out.println(bank.getAccount(accNumber).toString());
-        }
-        nt.log("ACCOUNTS PRINTED");
+    private static Thread asyncTransfer(TransferHandler transferHandler) {
+        Thread t = new Thread() {
+            public void run() {
+                transferHandler.makeTransfer();
+            }
+        };
+        t.start();
+        return t;
     }
 
-
-    private static void makeTransfers(int threadsCount, int perThread, NanoTimer nt) {
+    private static void makeTransfers(Timer nt, int threadsCount) {
+        final TransferHandler transferHandler = new TransferHandler();
         Thread[] threads = new Thread[threadsCount];
         for(int i = 0; i < threadsCount; i++) {
-            threads[i] = new Thread() {
-                public void run() {
-                    new TransferHandler().makeTransfer(perThread);
-                }
-            };
-            threads[i].start();
+            threads[i] = asyncTransfer(transferHandler);
         }
         nt.log(String.format("TRANSFERS STARTED %d", threadsCount));
         int counter;
         while(true) {
             counter = 0;
             for (Thread t : threads) {
-                if(t.isAlive()) {
+                if(t != null && t.isAlive()) {
                     counter++;
                 }
             }
-            //System.out.println(counter);
-            if (counter == 0) break;
+//            System.out.printf(".", counter);
+            if (counter == 0) {
+//                System.out.println(".");
+                break;
+            }
             try {
-                Thread.sleep(1);
+                Thread.sleep(100);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
@@ -72,14 +64,4 @@ public class App {
         nt.log("TRANSFERS STOPPED");
     }
 
-    private static void generateAccounts(NanoTimer nt, Bank bank, int quantity) {
-        for(int i = 0; i < quantity; i++) {
-            bank.openAccount(genMoney());
-        }
-        nt.log("ACCOUNTS GENERATED");
-    }
-
-    private static long genMoney() {
-        return r.nextInt(1000) * 1000000;
-    }
 }

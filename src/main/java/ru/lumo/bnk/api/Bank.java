@@ -1,5 +1,7 @@
 package ru.lumo.bnk.api;
 
+import java.util.List;
+
 /**
  * Created by misha on 16.05.16.
  */
@@ -13,7 +15,9 @@ public interface Bank {
 
     long closeAccount(String accNumber);
 
-    Object[] getAccNumbersList();
+    List<String> getAccNumbers();
+
+    List<Account> getBlockedAccounts();
 
     boolean isFraud(String fromAccountNum, String toAccountNum, long amount) throws InterruptedException;
 
