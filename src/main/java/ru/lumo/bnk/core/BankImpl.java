@@ -75,7 +75,7 @@ public class BankImpl implements Bank {
 
     private void sleepForChecking() {
         try {
-            Thread.sleep(100);
+            Thread.sleep(10);
         } catch (InterruptedException e) {
             logger.log(Level.WARNING, e.getMessage());
         }
@@ -107,24 +107,61 @@ public class BankImpl implements Bank {
                                               String toAccountNum, long amount) {
                         try {
                             getAccount(fromAccountNum).setChecking(true);
-                            System.out.printf("LOCK for checking %s%n", fromAccountNum);
                             getAccount(toAccountNum).setChecking(true);
-                            System.out.printf("LOCK for checking %s%n", toAccountNum);
+                            System.out.printf("Hold for checking %s - %s %n", fromAccountNum, toAccountNum);
                             return isFraud(fromAccountNum, toAccountNum, amount);
                         } catch (InterruptedException ex) {
-                            ex.printStackTrace();
+                            logger.log(Level.WARNING, ex.getMessage());
                             return true;
                         } finally {
                             getAccount(fromAccountNum).setChecking(false);
-                            System.out.printf("UNLOCK %s%n", fromAccountNum);
                             getAccount(toAccountNum).setChecking(false);
-                            System.out.printf("UNLOCK %s%n", toAccountNum);
+                            System.out.printf("Release %s - %s %n", fromAccountNum, toAccountNum);
                         }
                     }
                 };
                 t.start();
             } else {
                 doTransactionalTransfer(accFrom, accTo, amount);
+            }
+        }
+    }
+
+    private class FraudWorker implements Runnable {
+//http://www.journaldev.com/1069/java-thread-pool-example-using-executors-and-threadpoolexecutor
+        private Account accFrom;
+        private Account accTo;
+        private long amount;
+
+        public FraudWorker(Account accFrom, Account accTo,
+                           long amount) {
+            this.accFrom = accFrom;
+            this.accTo = accTo;
+            this.amount = amount;
+        }
+
+        public void run() {
+            if (findFraud(accFrom.getAccNumber(), accTo.getAccNumber(), amount)) {
+                lockAccounts(accFrom, accTo);
+            } else {
+                doTransactionalTransfer(accFrom, accTo, amount);
+            }
+        }
+
+        private boolean findFraud(String fromAccountNum,
+                                  String toAccountNum, long amount) {
+            try {
+                getAccount(fromAccountNum).setChecking(true);
+                getAccount(toAccountNum).setChecking(true);
+                System.out.printf("Hold for checking %s - %s %n", fromAccountNum, toAccountNum);
+                return isFraud(fromAccountNum, toAccountNum, amount);
+            } catch (InterruptedException ex) {
+                logger.log(Level.WARNING, ex.getMessage());
+                return true;
+            } finally {
+                getAccount(fromAccountNum).setChecking(false);
+                getAccount(toAccountNum).setChecking(false);
+                System.out.printf("Release %s - %s %n", fromAccountNum, toAccountNum);
             }
         }
     }
@@ -142,6 +179,7 @@ public class BankImpl implements Bank {
             accFrom.debet(amount);
             accTo.credit(amount);
             totalTransfers++;
+            System.out.println(".");
         } catch (LockedAccountException e) {
 //            System.out.printf("    !!!!!!!!!   Deny transfer %d from %s to %s%n",
 //                    amount, accFrom.getAccNumber(), accTo.getAccNumber());
