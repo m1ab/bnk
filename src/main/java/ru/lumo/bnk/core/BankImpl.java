@@ -4,7 +4,6 @@ import ru.lumo.bnk.api.Account;
 import ru.lumo.bnk.api.Bank;
 import ru.lumo.bnk.api.LockedAccountException;
 
-import javax.annotation.PreDestroy;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
