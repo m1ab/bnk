@@ -4,8 +4,11 @@ import ru.lumo.bnk.api.Account;
 import ru.lumo.bnk.api.Bank;
 import ru.lumo.bnk.api.LockedAccountException;
 
+import javax.annotation.PreDestroy;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -21,6 +24,8 @@ public class BankImpl implements Bank {
     private Map<String, Account> accountsCache = new ConcurrentHashMap<>();
     private int totalTransfers = 0;
 
+    ExecutorService executor;
+
     private static BankImpl ourInstance = new BankImpl();
 
     public static BankImpl getInstance() {
@@ -28,6 +33,7 @@ public class BankImpl implements Bank {
     }
 
     private BankImpl() {
+        executor = Executors.newFixedThreadPool(10);
     }
 
     @Override
@@ -93,38 +99,20 @@ public class BankImpl implements Bank {
 //                    amount, accFrom.getAccNumber(), accTo.getAccNumber());
         } else {
             if (amount > 50000) {
-                Thread t = new Thread() {
-
-                    public void run() {
-                        if (findFraud(fromAccountNum, toAccountNum, amount)) {
-                            lockAccounts(accFrom, accTo);
-                        } else {
-                            doTransactionalTransfer(accFrom, accTo, amount);
-                        }
-                    }
-
-                    private boolean findFraud(String fromAccountNum,
-                                              String toAccountNum, long amount) {
-                        try {
-                            getAccount(fromAccountNum).setChecking(true);
-                            getAccount(toAccountNum).setChecking(true);
-                            System.out.printf("Hold for checking %s - %s %n", fromAccountNum, toAccountNum);
-                            return isFraud(fromAccountNum, toAccountNum, amount);
-                        } catch (InterruptedException ex) {
-                            logger.log(Level.WARNING, ex.getMessage());
-                            return true;
-                        } finally {
-                            getAccount(fromAccountNum).setChecking(false);
-                            getAccount(toAccountNum).setChecking(false);
-                            System.out.printf("Release %s - %s %n", fromAccountNum, toAccountNum);
-                        }
-                    }
-                };
-                t.start();
+                executor.execute(new FraudWorker(accFrom, accTo, amount));
             } else {
                 doTransactionalTransfer(accFrom, accTo, amount);
             }
         }
+    }
+
+    @Override
+    public void shutdown() {
+        executor.shutdown();
+        while (!executor.isTerminated()) {
+//            System.out.print(".");
+        }
+        System.out.println("\nFinished all threads");
     }
 
     private class FraudWorker implements Runnable {
@@ -161,7 +149,7 @@ public class BankImpl implements Bank {
             } finally {
                 getAccount(fromAccountNum).setChecking(false);
                 getAccount(toAccountNum).setChecking(false);
-                System.out.printf("Release %s - %s %n", fromAccountNum, toAccountNum);
+                System.out.printf("    Release %s - %s %n", fromAccountNum, toAccountNum);
             }
         }
     }
@@ -179,7 +167,7 @@ public class BankImpl implements Bank {
             accFrom.debet(amount);
             accTo.credit(amount);
             totalTransfers++;
-            System.out.println(".");
+//            System.out.println(".");
         } catch (LockedAccountException e) {
 //            System.out.printf("    !!!!!!!!!   Deny transfer %d from %s to %s%n",
 //                    amount, accFrom.getAccNumber(), accTo.getAccNumber());

@@ -24,4 +24,6 @@ public interface Bank {
     void transfer(String fromAccountNum, String toAccountNum, long amount);
 
     int getTotalTransfers();
+
+    void shutdown();
 }
